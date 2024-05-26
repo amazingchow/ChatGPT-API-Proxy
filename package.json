@@ -1,16 +1,31 @@
 {
-  "name": "cloudflare-worker",
-  "version": "0.0.0",
+  "name": "chatgpt-api-proxy",
+  "version": "0.1.0",
+  "description": "Using Cloudflare Worker to proxy ChatGPT API requests.",
+  "main": "src/entry.js",
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
+    "dev": "wrangler dev --ip 0.0.0.0 --port 17777",
+    "start": "wrangler dev --ip 0.0.0.0 --port 17777",
     "test": "vitest"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amazingchow/ChatGPT-API-Proxy.git"
+  },
+  "author": "Adam Zhou",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/amazingchow/ChatGPT-API-Proxy/issues"
+  },
+  "homepage": "https://github.com/amazingchow/ChatGPT-API-Proxy",
   "devDependencies": {
-    "wrangler": "^3.0.0",
+    "@cloudflare/vitest-pool-workers": "^0.1.0",
+    "@eslint/js": "^9.3.0",
+    "eslint": "9.x",
+    "globals": "^15.3.0",
     "vitest": "1.3.0",
-    "@cloudflare/vitest-pool-workers": "^0.1.0"
+    "wrangler": "^3.0.0"
   }
 }
