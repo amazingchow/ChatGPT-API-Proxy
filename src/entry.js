@@ -9,11 +9,13 @@
  */
 
 // Website you intended to visit.
-const UPSTREAM = 'api.openai.com'
+const UPSTREAM_DOMAIN = 'api.openai.com'
 // Custom path name for the upstream website.
 const UPSTREAM_PATH = '/'
 // Website you intended to visit using mobile devices.
-const UPSTREAM_MOBILE = UPSTREAM
+const UPSTREAM_DOMAIN_MOBILE = UPSTREAM_DOMAIN
+// Timeout for requesting the upstream server.
+const UPSTREAM_TIMEOUT = 30000
 // Countries and regions where you wish to suspend your service.
 const BLOCKED_REGION_LIST = []
 // IP addresses which you wish to block from using your service.
@@ -53,78 +55,118 @@ async function replaceResponseText(response, upstream_domain, host_name) {
 
 
 export default {
+	// eslint-disable-next-line no-unused-vars
 	async fetch(request, env, ctx) {
-		console.log('Request URL:', request.url)
-
 		// Block requests based on the blocked lists (BLOCKED_REGION_LIST or BLOCKED_IP_ADDRESS_LIST).
 		const region = request.headers.get('cf-ipcountry')
 		if (region != null && BLOCKED_REGION_LIST.includes(region.toUpperCase())) {
+			console.log('Blocked region:', region)
 			return new Response('Access denied: Your region is blocked by ChatGPT-API-Proxy.', {
 				status: 403
 			})
 		}
 		const ip_address = request.headers.get('cf-connecting-ip')
 		if (ip_address != null && BLOCKED_IP_ADDRESS_LIST.includes(ip_address)) {
+			console.log('Blocked IP address:', ip_address)
 			return new Response('Access denied: Your IP address is blocked by ChatGPT-API-Proxy.', {
 				status: 403
 			})
 		}
 	
-		// Make the request to the upstream server.
 		let request_url = new URL(request.url)
+		console.log('Incoming URL:', request_url.href)
+		// 1. Set the protocol upstream request url.
 		if (DISABLE_HTTPS == false) {
 			request_url.protocol = 'https:'
 		} else {
 			request_url.protocol = 'http:'
 		}
-		request_url.host = UPSTREAM_MOBILE
-		request_url.port = '443'
-		if (request_url.pathname == '/') {
-			request_url.pathname = UPSTREAM_PATH
+		// 2. Set the host and port for the upstream request url.
+		request_url.host = UPSTREAM_DOMAIN_MOBILE
+		if (DISABLE_HTTPS == false) {
+			request_url.port = '443'
 		} else {
-			request_url.pathname = UPSTREAM_PATH + request_url.pathname
+			request_url.port = '80'
 		}
+		// 3. Set the path for the upstream request url.
+		if (request_url.pathname.startsWith('/proxy')) {
+			request_url.pathname = UPSTREAM_PATH + request_url.pathname.replace('/proxy', '')
+		} else {
+			return new Response('Access denied: Your path is not allowed by ChatGPT-API-Proxy.', {
+				status: 403
+			})
+		}
+		console.log('Upstream URL:', request_url.href)
+		// 4. Set the headers for the upstream request.
 		let request_headers = new Headers(request.headers)
-		request_headers.set('Host', UPSTREAM_MOBILE)
+		request_headers.set('Host', UPSTREAM_DOMAIN_MOBILE)
 		request_headers.set('Referer', request_url.protocol + '//' + request_url.hostname)
-		let original_response = await fetch(request_url.href, {
+		// 5. Make the request to the upstream server.
+		let original_response = null
+		let original_response_status = 200
+		const timeoutController = new AbortController();
+		const timeoutId = setTimeout(() => timeoutController.abort(), UPSTREAM_TIMEOUT);
+		await fetch(request_url.href, {
 			method: request.method,
 			headers: request_headers,
-			body: request.body
+			body: request.body,
+			signal: timeoutController.signal
+		}).then(data => {
+			original_response = data
+			original_response_status = data.status
+		}).catch(error => {
+			if (error.name === 'AbortError') {
+				console.error('Request Timeout:', error)
+				original_response_status = 504
+			} else {
+				console.error('Request Error:', error)
+				original_response_status = 502
+			}
+		}).finally(() => {
+			clearTimeout(timeoutId)
+			if (original_response_status == 502) {
+				return new Response('Error occurred while fetching data from ' + UPSTREAM_DOMAIN_MOBILE + '.', {
+					status: 502
+				})
+			} else if (original_response_status == 504) {
+				return new Response('Request timed out.', {
+					status: 504
+				})
+			}
 		})
 	
 		// It's websocket connection, so bypass it.
 		let connection_upgrade = request_headers.get("Upgrade")
 		if (connection_upgrade && connection_upgrade.toLowerCase() == "websocket") {
 			return original_response
+		} else {	
+			// Apply modifications to the response from the upstream server.
+			let original_text = await original_response.text()
+		
+			let response_headers = original_response.headers
+			let new_response_headers = new Headers(response_headers)
+			if (DISABLE_CACHE) {
+				new_response_headers.set('Cache-Control', 'no-store')
+			}
+			new_response_headers.set('access-control-allow-origin', '*')
+			new_response_headers.set('access-control-allow-credentials', 'true')
+			new_response_headers.delete('content-security-policy')
+			new_response_headers.delete('content-security-policy-report-only')
+			new_response_headers.delete('clear-site-data')
+			if (new_response_headers.get("x-pjax-url")) {
+				new_response_headers.set("x-pjax-url", response_headers.get("x-pjax-url").replace("//" + UPSTREAM_DOMAIN_MOBILE, "//" + request_url.hostname))
+			}
+			let status = original_response.status
+		
+			const content_type = new_response_headers.get('content-type')
+			if (content_type != null && content_type.includes('text/html') && content_type.includes('UTF-8')) {
+				original_text = await replaceResponseText(original_text, UPSTREAM_DOMAIN_MOBILE, request_url.hostname)
+			}
+		
+			return new Response(original_text, {
+				status,
+				headers: new_response_headers
+			})
 		}
-	
-		// Apply modifications to the response from the upstream server.
-		let original_text = await original_response.text()
-	
-		let response_headers = original_response.headers
-		let new_response_headers = new Headers(response_headers)
-		if (DISABLE_CACHE) {
-			new_response_headers.set('Cache-Control', 'no-store')
-		}
-		new_response_headers.set('access-control-allow-origin', '*')
-		new_response_headers.set('access-control-allow-credentials', 'true')
-		new_response_headers.delete('content-security-policy')
-		new_response_headers.delete('content-security-policy-report-only')
-		new_response_headers.delete('clear-site-data')
-		if (new_response_headers.get("x-pjax-url")) {
-			new_response_headers.set("x-pjax-url", response_headers.get("x-pjax-url").replace("//" + UPSTREAM_MOBILE, "//" + request_url.hostname))
-		}
-		let status = original_response.status
-	
-		const content_type = new_response_headers.get('content-type')
-		if (content_type != null && content_type.includes('text/html') && content_type.includes('UTF-8')) {
-			original_text = await replaceResponseText(original_text, UPSTREAM_MOBILE, request_url.hostname)
-		}
-	
-		return new Response(original_text, {
-			status,
-			headers: new_response_headers
-		})
 	},
 };
