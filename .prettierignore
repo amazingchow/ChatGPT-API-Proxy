@@ -1,0 +1,7 @@
+.eslintrc.cjs
+.prettierrc.json
+.vscode/extensions.json
+jsconfig.json
+package-lock.json
+package.json
+README.md

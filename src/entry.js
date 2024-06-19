@@ -15,7 +15,7 @@ const UPSTREAM_PATH = '/'
 // Website you intended to visit using mobile devices.
 const UPSTREAM_DOMAIN_MOBILE = UPSTREAM_DOMAIN
 // Timeout for requesting the upstream server.
-const UPSTREAM_TIMEOUT = 30000
+const UPSTREAM_TIMEOUT = 300000
 // Countries and regions where you wish to suspend your service.
 const BLOCKED_REGION_LIST = []
 // IP addresses which you wish to block from using your service.
@@ -26,33 +26,32 @@ const DISABLE_HTTPS = false
 const DISABLE_CACHE = false
 // Replace texts.
 const REPLACE_DICT = {
-    '$upstream': '$custom_domain',
+	$upstream: '$custom_domain'
 }
 
 async function replaceResponseText(response, upstream_domain, host_name) {
-    let text = await response.text()
+	let text = await response.text()
 
-    var i, j
-    for (i in REPLACE_DICT) {
-        j = REPLACE_DICT[i]
-        if (i == '$upstream') {
-            i = upstream_domain
-        } else if (i == '$custom_domain') {
-            i = host_name
-        }
+	var i, j
+	for (i in REPLACE_DICT) {
+		j = REPLACE_DICT[i]
+		if (i == '$upstream') {
+			i = upstream_domain
+		} else if (i == '$custom_domain') {
+			i = host_name
+		}
 
-        if (j == '$upstream') {
-            j = upstream_domain
-        } else if (j == '$custom_domain') {
-            j = host_name
-        }
+		if (j == '$upstream') {
+			j = upstream_domain
+		} else if (j == '$custom_domain') {
+			j = host_name
+		}
 
-        let re = new RegExp(i, 'g')
-        text = text.replace(re, j)
-    }
-    return text
+		let re = new RegExp(i, 'g')
+		text = text.replace(re, j)
+	}
+	return text
 }
-
 
 export default {
 	/**
@@ -79,7 +78,7 @@ export default {
 					status: 403
 				})
 			}
-		
+
 			let request_url = new URL(request.url)
 			console.log('Incoming URL:', request_url.href)
 			// 1. Set the protocol upstream request url.
@@ -97,7 +96,7 @@ export default {
 			}
 			// 3. Set the path for the upstream request url.
 			if (request_url.pathname.startsWith('/proxy')) {
-				request_url.pathname = UPSTREAM_PATH + request_url.pathname.replace('/proxy', '')
+				request_url.pathname = UPSTREAM_PATH + request_url.pathname.replace('/proxy/', '')
 			} else {
 				return new Response('Access denied: Your path is not allowed by ChatGPT-API-Proxy.', {
 					status: 403
@@ -111,46 +110,49 @@ export default {
 			// 5. Make the request to the upstream server.
 			let original_response = null
 			let original_response_status = 200
-			const timeoutController = new AbortController();
-			const timeoutId = setTimeout(() => timeoutController.abort(), UPSTREAM_TIMEOUT);
+			const timeoutController = new AbortController()
+			const timeoutId = setTimeout(() => timeoutController.abort(), UPSTREAM_TIMEOUT)
 			await fetch(request_url.href, {
 				method: request.method,
 				headers: request_headers,
 				body: request.body,
 				signal: timeoutController.signal
-			}).then(data => {
-				original_response = data
-				original_response_status = data.status
-			}).catch(err => {
-				/** @type {Error} */ let e = err
-				if (e.name === 'AbortError') {
-					console.error('Request Timeout:', e.toString())
-					original_response_status = 504
-				} else {
-					console.error('Request Error:', e.toString())
-					original_response_status = 502
-				}
-			}).finally(() => {
-				clearTimeout(timeoutId)
-				if (original_response_status == 502) {
-					return new Response('Error occurred while fetching data from ' + UPSTREAM_DOMAIN_MOBILE + '.', {
-						status: 502
-					})
-				} else if (original_response_status == 504) {
-					return new Response('Request timed out.', {
-						status: 504
-					})
-				}
 			})
-		
+				.then((data) => {
+					original_response = data
+					original_response_status = data.status
+				})
+				.catch((err) => {
+					/** @type {Error} */ let e = err
+					if (e.name === 'AbortError') {
+						console.error('Request Timeout:', e.toString())
+						original_response_status = 504
+					} else {
+						console.error('Request Error:', e.toString())
+						original_response_status = 502
+					}
+				})
+				.finally(() => {
+					clearTimeout(timeoutId)
+					if (original_response_status == 502) {
+						return new Response('Error occurred while fetching data from ' + UPSTREAM_DOMAIN_MOBILE + '.', {
+							status: 502
+						})
+					} else if (original_response_status == 504) {
+						return new Response('Request timed out.', {
+							status: 504
+						})
+					}
+				})
+
 			// It's websocket connection, so bypass it.
-			let connection_upgrade = request_headers.get("Upgrade")
-			if (connection_upgrade && connection_upgrade.toLowerCase() == "websocket") {
+			let connection_upgrade = request_headers.get('Upgrade')
+			if (connection_upgrade && connection_upgrade.toLowerCase() == 'websocket') {
 				return original_response
-			} else {	
+			} else {
 				// Apply modifications to the response from the upstream server.
 				let original_text = await original_response.text()
-			
+
 				let response_headers = original_response.headers
 				let new_response_headers = new Headers(response_headers)
 				if (DISABLE_CACHE) {
@@ -161,16 +163,16 @@ export default {
 				new_response_headers.delete('content-security-policy')
 				new_response_headers.delete('content-security-policy-report-only')
 				new_response_headers.delete('clear-site-data')
-				if (new_response_headers.get("x-pjax-url")) {
-					new_response_headers.set("x-pjax-url", response_headers.get("x-pjax-url").replace("//" + UPSTREAM_DOMAIN_MOBILE, "//" + request_url.hostname))
+				if (new_response_headers.get('x-pjax-url')) {
+					new_response_headers.set('x-pjax-url', response_headers.get('x-pjax-url').replace('//' + UPSTREAM_DOMAIN_MOBILE, '//' + request_url.hostname))
 				}
 				let status = original_response.status
-			
+
 				const content_type = new_response_headers.get('content-type')
 				if (content_type != null && content_type.includes('text/html') && content_type.includes('UTF-8')) {
 					original_text = await replaceResponseText(original_text, UPSTREAM_DOMAIN_MOBILE, request_url.hostname)
 				}
-			
+
 				return new Response(original_text, {
 					status,
 					headers: new_response_headers
@@ -180,5 +182,5 @@ export default {
 			/** @type {Error} */ let e = err
 			return new Response(e.toString())
 		}
-	},
-};
+	}
+}
