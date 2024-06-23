@@ -9,7 +9,7 @@
  */
 
 // Website you intended to visit.
-const UPSTREAM_DOMAIN = 'api.openai.com'
+const UPSTREAM_DOMAIN = 'api.anthropic.com'
 // Custom path name for the upstream website.
 const UPSTREAM_PATH = '/'
 // Website you intended to visit using mobile devices.
@@ -67,14 +67,14 @@ export default {
 			const region = request.headers.get('cf-ipcountry')
 			if (region != null && BLOCKED_REGION_LIST.includes(region.toUpperCase())) {
 				console.log('Blocked region:', region)
-				return new Response('Access denied: Your region is blocked by ChatGPT-API-Proxy.', {
+				return new Response('Access denied: Your region is blocked by Anthropic-API-Proxy.', {
 					status: 403
 				})
 			}
 			const ip_address = request.headers.get('cf-connecting-ip')
 			if (ip_address != null && BLOCKED_IP_ADDRESS_LIST.includes(ip_address)) {
 				console.log('Blocked IP address:', ip_address)
-				return new Response('Access denied: Your IP address is blocked by ChatGPT-API-Proxy.', {
+				return new Response('Access denied: Your IP address is blocked by Anthropic-API-Proxy.', {
 					status: 403
 				})
 			}
@@ -98,7 +98,7 @@ export default {
 			if (request_url.pathname.startsWith('/proxy')) {
 				request_url.pathname = UPSTREAM_PATH + request_url.pathname.replace('/proxy/', '')
 			} else {
-				return new Response('Access denied: Your path is not allowed by ChatGPT-API-Proxy.', {
+				return new Response('Access denied: Your path is not allowed by Anthropic-API-Proxy.', {
 					status: 403
 				})
 			}
